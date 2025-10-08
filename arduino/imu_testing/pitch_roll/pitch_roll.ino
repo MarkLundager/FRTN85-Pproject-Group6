@@ -8,14 +8,14 @@
 const int MPU = 0x68; // I2C address (AD0=GND → 0x68)
 
 // --- Variáveis globais ---
-float AccX, AccY, AccZ;
+float AccX, AccY, AccZ, aux;
 float GyroX, GyroY, GyroZ;
 float roll = 0.0, pitch = 0.0, yaw = 0.0;
 
 // Calibração
 float GyroErrorX = 0.0, GyroErrorY = 0.0, GyroErrorZ = 0.0;
-const float rollOffset  = 0.257;
-const float pitchOffset = -1.982;
+const float rollOffset  = 0.0;
+const float pitchOffset = 0.0;
 
 // Filtro complementar
 const float alpha = 0.96f; // peso do giroscópio
@@ -56,6 +56,11 @@ void loop() {
   AccY = (Wire.read() << 8 | Wire.read()) / 16384.0;
   AccZ = (Wire.read() << 8 | Wire.read()) / 16384.0;
 
+  aux = AccX;
+  AccX = -AccY;
+  AccY =  aux;
+  AccZ = -AccZ;
+
   float accAngleX = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI - rollOffset;
   float accAngleY = atan2(-AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI - pitchOffset;
 
@@ -67,6 +72,12 @@ void loop() {
   GyroX = (Wire.read() << 8 | Wire.read()) / 131.0;
   GyroY = (Wire.read() << 8 | Wire.read()) / 131.0;
   GyroZ = (Wire.read() << 8 | Wire.read()) / 131.0;
+
+  aux = GyroX;
+  GyroX = -GyroY;
+  GyroY =  aux;
+  GyroZ = -GyroZ;
+
 
   // Remover bias
   GyroX -= GyroErrorX;
