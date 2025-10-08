@@ -6,7 +6,7 @@ h = 1.64          # servo horn length
 d = 17.0          # rod length (fixed)
 r_top = 7.8       # top platform radius
 r_bot = 9.3       # base radius
-z0 = 16.5         # nominal height
+z0 = 16.3         # nominal height
 
 # --- Pair separations (radians) ---
 pDelta = np.deg2rad(15.25)   # platform pair separation
