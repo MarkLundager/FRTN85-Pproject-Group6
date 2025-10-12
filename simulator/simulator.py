@@ -8,7 +8,6 @@ from utils import R_x, R_y, circle_points
 from IK import compute_alpha_rad
 from FK import fk_iterative_6dof
 
-# ---------- helpers ----------
 def horn_endpoints_base(B_base, beta, alpha, h_len):
     ca, sa = np.cos(alpha), np.sin(alpha)
     cb, sb = np.cos(beta),  np.sin(beta)
@@ -39,24 +38,20 @@ def rods_feasible(R_tb, T_tb, alpha, B_dev, p_top, d_len, tol=1e-3):
     L = np.linalg.norm(P - H, axis=1)
     return np.all(np.isfinite(L)) and np.all(np.abs(L - d_len) <= tol)
 
-# ---------- main ----------
 def run():
     fig = plt.figure(figsize=(11, 8))
     ax3d = fig.add_subplot(111, projection='3d')
     plt.subplots_adjust(left=0.14, right=0.78, bottom=0.22)
     fig.patch.set_facecolor('white'); ax3d.set_facecolor('white'); ax3d.set_axis_off()
 
-    # Base geometry (device frame)
     B_dev = B.copy()
 
-    # Initial: level at z0 -> initial alphas via IK
     R_tb = np.eye(3)
     T_tb = np.array([0.0, 0.0, z0])
     P_dev0 = (R_tb @ p.T).T + T_tb
     alpha_act, _ = compute_alpha_rad(P_dev0 - B_dev, beta)
     alpha_cmd = alpha_act.copy()
 
-    # Last-feasible snapshot (used to clamp the GUI)
     last_ok = {
         "R_tb": R_tb.copy(),
         "T_tb": T_tb.copy(),
@@ -64,12 +59,10 @@ def run():
         "alpha_cmd": alpha_cmd.copy()
     }
 
-    # Initial horn tips & disks (device frame)
     H_dev = horn_endpoints_base(B_dev, beta, alpha_act, h)
     top_circle_dev  = (R_tb @ circle_points(r_top).T).T + T_tb
     base_circle_dev = circle_points(r_bot)
 
-    # Draw
     top_poly  = Poly3DCollection([top_circle_dev],  alpha=0.25, facecolor=(0,0,1,0.15), edgecolor='none')
     base_poly = Poly3DCollection([base_circle_dev], alpha=0.18, facecolor=(0,0,0,0.10), edgecolor='none')
     ax3d.add_collection3d(top_poly); ax3d.add_collection3d(base_poly)
@@ -77,7 +70,6 @@ def run():
     base_frame = draw_frame(ax3d, np.eye(3), [0,0,0], scale=3.0)
     top_frame  = draw_frame(ax3d, R_tb, T_tb, scale=3.0)
 
-    # Points/rods
     P_dev = (R_tb @ p.T).T + T_tb
     top_pts  = ax3d.scatter(P_dev[:,0], P_dev[:,1], P_dev[:,2], s=8, c='b')
     base_pts = ax3d.scatter(B_dev[:,0], B_dev[:,1], B_dev[:,2], s=8, c='k')
@@ -88,11 +80,11 @@ def run():
                        [H_dev[i,1], P_dev[i,1]],
                        [H_dev[i,2], P_dev[i,2]], lw=2, color='k')[0] for i in range(6)]
 
-    # Camera
+
     ax3d.set_xlim(-12, 12); ax3d.set_ylim(-12, 12); ax3d.set_zlim(0, 25)
     ax3d.set_box_aspect([1,1,1]); ax3d.view_init(elev=20, azim=-60)
 
-    # Servo angle bars
+
     ax_bar = fig.add_axes([0.82, 0.25, 0.16, 0.65])
     yidx = np.arange(6)
     bars = ax_bar.barh(yidx, np.degrees(alpha_act), align='center')
@@ -100,40 +92,36 @@ def run():
     ax_bar.axvline(0, lw=0.8); ax_bar.set_xlim(-90, 90)
     ax_bar.set_xlabel('alpha [deg]'); ax_bar.set_title("Servo angles")
 
-    # Status text (feasibility)
+
     status_text = fig.text(0.15, 0.015, "", color='red')
 
-    # Sliders (global tilt = IMU sim)
+
     ax_broll  = plt.axes([0.20, 0.09, 0.45, 0.03])
     ax_bpitch = plt.axes([0.20, 0.04, 0.45, 0.03])
     s_broll   = Slider(ax_broll,  'Global roll [°]',  -45, 45, valinit=0)
     s_bpitch  = Slider(ax_bpitch, 'Global pitch [°]', -45, 45, valinit=0)
 
-    # Actuator smoothing
+
     DT  = 0.02
     TAU = 0.06
 
-    # FK seed
     R_seed = R_tb.copy()
     T_seed = T_tb.copy()
 
     def update(_):
         nonlocal alpha_act, alpha_cmd, R_tb, T_tb, R_seed, T_seed, last_ok
 
-        # IMU: base->world
+
         broll  = np.radians(s_broll.val)
         bpitch = np.radians(s_bpitch.val)
         R_bw   = R_y(bpitch) @ R_x(broll)
 
-        # --------- Controller target (level in world) -> desired top->base ----------
         R_tb_des = R_bw.T
         T_tb_des = np.array([0.0, 0.0, z0])
 
-        # IK for desired pose (device/base frame)
         P_dev_des = (R_tb_des @ p.T).T + T_tb_des
         alpha_des, flags = compute_alpha_rad(P_dev_des - B_dev, beta)
 
-        # If IK returns NaNs or violates angle limits, clamp to last feasible
         ik_ok = angles_feasible(alpha_des) and (not any(flags))
         if ik_ok:
             alpha_cmd = alpha_des
@@ -141,17 +129,13 @@ def run():
             status_text.set_text("IK infeasible — clamping to last feasible command")
             alpha_cmd = last_ok["alpha_cmd"]
 
-        # Smooth actuator toward command
         alpha_next = alpha_act + (alpha_cmd - alpha_act) * (1 - np.exp(-DT/TAU))
 
-        # --------- FK with proposed alpha_next to get actual top->base pose ----------
         H_try = horn_endpoints_base(B_dev, beta, alpha_next, h)
         R_try, T_try = fk_iterative_6dof(H_try, p, d, R_seed, T_seed)
 
-        # Validate rods + angles before accepting the new state
         fk_ok = rods_feasible(R_try, T_try, alpha_next, B_dev, p, d)
         if fk_ok and angles_feasible(alpha_next):
-            # accept
             R_tb, T_tb = R_try, T_try
             alpha_act  = alpha_next
             R_seed, T_seed = R_tb.copy(), T_tb.copy()
@@ -163,7 +147,6 @@ def run():
             }
             status_text.set_text("")
         else:
-            # reject — stick to last feasible snapshot
             R_tb, T_tb   = last_ok["R_tb"], last_ok["T_tb"]
             alpha_act    = last_ok["alpha_act"]
             alpha_cmd    = last_ok["alpha_cmd"]
@@ -173,7 +156,6 @@ def run():
             else:
                 status_text.set_text("FK/rod constraint infeasible — clamped")
 
-        # --------- Draw in world coordinates ---------
         H_dev = horn_endpoints_base(B_dev, beta, alpha_act, h)
         P_dev = (R_tb @ p.T).T + T_tb
 
@@ -198,7 +180,6 @@ def run():
             horns[i].set_data_3d([B_w[i,0], H_w[i,0]],[B_w[i,1], H_w[i,1]],[B_w[i,2], H_w[i,2]])
             rods[i].set_data_3d([H_w[i,0], P_w[i,0]],[H_w[i,1], P_w[i,1]],[H_w[i,2], P_w[i,2]])
 
-        # Bars
         a_deg = np.degrees(alpha_act)
         for i, bar in enumerate(bars):
             bar.set_width(a_deg[i])
