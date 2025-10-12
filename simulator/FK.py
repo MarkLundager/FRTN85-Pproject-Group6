@@ -14,7 +14,7 @@ def so3_exp(omega):
 
 def fk_iterative_6dof(H, p_top, d_len, R_init, T_init,
                       iters=20, lam=1e-3, tol_r=1e-6, tol_dx=1e-8):
-    R = R_init.copy()
+    R = R_init.copy() 
     T = T_init.copy()
     for _ in range(iters):
         P = (R @ p_top.T).T + T          
