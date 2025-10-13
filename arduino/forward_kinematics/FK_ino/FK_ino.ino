@@ -22,6 +22,8 @@ static const float ROD_TOL  = 1e-3f;   // cm tolerance on |HP| == d
 // ---------- Math helpers (same as before) ----------
 static const float EPS = 1e-12f;
 
+inline float deg2rad(float d){ return d * (float)M_PI / 180.0f; }
+
 inline float vnorm3(const float v[3]) {
   return sqrtf(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
 }
