@@ -26,6 +26,13 @@ static float pitchOffset = 0.0f;
 static const float alpha = 0.96f;
 static unsigned long t_prev_us = 0;
 
+// --- Moving average filter for accelerometer ---
+static const int AVG_WINDOW = 100;
+static float rollBuf[AVG_WINDOW];
+static float pitchBuf[AVG_WINDOW];
+static int bufIdx = 0;
+static bool bufFilled = false;
+
 // ---------- Gyro calibration ----------
 static void calibrateGyro() {
   float sx=0, sy=0, sz=0;
@@ -109,7 +116,7 @@ void imu_begin() {
   delay(100);
   calibrateGyro();
   delay(200);
-  calibrateAccelOffsets();  // <-- now also calibrate accel orientation
+  calibrateAccelOffsets();
 
   t_prev_us = micros();
 }
@@ -133,6 +140,21 @@ void imu_update() {
 
   float accRoll  = atan2f(AccY, sqrtf(AccX*AccX + AccZ*AccZ)) * 180.0f/PI - rollOffset;
   float accPitch = atan2f(-AccX, sqrtf(AccY*AccY + AccZ*AccZ)) * 180.0f/PI - pitchOffset;
+
+  // --- Moving average for accelerometer ---
+  rollBuf[bufIdx]  = accRoll;
+  pitchBuf[bufIdx] = accPitch;
+  bufIdx++;
+  if (bufIdx >= AVG_WINDOW) { bufIdx = 0; bufFilled = true; }
+
+  int n = bufFilled ? AVG_WINDOW : bufIdx;
+  float sumR = 0.0f, sumP = 0.0f;
+  for (int i = 0; i < n; i++) {
+    sumR += rollBuf[i];
+    sumP += pitchBuf[i];
+  }
+  float accRoll_filt  = sumR / n;
+  float accPitch_filt = sumP / n;
 
   // --- Read gyro ---
   Wire.beginTransmission(MPU);
@@ -165,8 +187,8 @@ void imu_update() {
   float w = (fabsf(anorm - 1.0f) < 0.15f) ? (1.0f - alpha) : 0.0f;
 
   // Complementary filter (degrees)
-  roll_est  = alpha * (roll_est  + GyroX * dt) + w * accRoll;
-  pitch_est = alpha * (pitch_est + GyroY * dt) + w * accPitch;
+  roll_est  = alpha * (roll_est  + GyroX * dt) + w * accRoll_filt;
+  pitch_est = alpha * (pitch_est + GyroY * dt) + w * accPitch_filt;
   yaw_est  += GyroZ * dt;
 }
 

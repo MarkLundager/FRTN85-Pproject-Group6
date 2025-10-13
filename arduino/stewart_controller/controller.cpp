@@ -5,10 +5,10 @@
 
 namespace {
 // ---------- PD attitude controller configuration ----------
-static const float KP_ROLL  = 0.8f;   // proportional gain [deg/deg]
-static const float KP_PITCH = 0.8f;
-static const float KD_ROLL  = 0.12f;  // derivative gain [deg*s/deg]
-static const float KD_PITCH = 0.12f;
+static const float KP_ROLL  = 0.3f;   // proportional gain [deg/deg]
+static const float KP_PITCH = 0.3f;
+static const float KD_ROLL  = 0.05f;  // derivative gain [deg*s/deg]
+static const float KD_PITCH = 0.05f;
 static const float DERIV_LPF_ALPHA = 0.8f; // 0..1, closer to 1 = more smoothing
 static const float REF_LIMIT_DEG    = 12.0f; // clamp controller output to safe range
 
@@ -32,6 +32,11 @@ void controller_init(float initial_roll_deg, float initial_pitch_deg) {
 void controller_reset(float ref_roll_deg_in, float ref_pitch_deg_in) {
   controller_init(ref_roll_deg_in, ref_pitch_deg_in);
 }
+static const float DEAD_BAND_DEG = 1.0f;  // ignore errors smaller than this
+
+inline float apply_deadband(float err, float threshold) {
+  return (fabs(err) < threshold) ? 0.0f : err;
+}
 
 void controller_update(float desired_roll_deg,
                        float desired_pitch_deg,
@@ -40,12 +45,14 @@ void controller_update(float desired_roll_deg,
                        float dt_seconds,
                        float& ref_roll_deg_out,
                        float& ref_pitch_deg_out) {
-  if (dt_seconds <= 0.0f) {
-    dt_seconds = 0.0005f; // fallback to 2 kHz update
-  }
+  if (dt_seconds <= 0.0f) dt_seconds = 0.0005f;
 
   float err_roll  = desired_roll_deg  - measured_roll_deg;
   float err_pitch = desired_pitch_deg - measured_pitch_deg;
+
+  // suppress small oscillations
+  err_roll  = apply_deadband(err_roll,  DEAD_BAND_DEG);
+  err_pitch = apply_deadband(err_pitch, DEAD_BAND_DEG);
 
   float derr_roll  = (err_roll  - err_roll_prev)  / dt_seconds;
   float derr_pitch = (err_pitch - err_pitch_prev) / dt_seconds;

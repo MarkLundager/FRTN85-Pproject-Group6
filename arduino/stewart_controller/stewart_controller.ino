@@ -17,6 +17,8 @@ extern void  imu_get_rp(float& roll_deg, float& pitch_deg);
 extern void  ik_init_geometry(); // precomputes B, p, beta
 extern void  ik_compute(float roll_deg, float pitch_deg, float alpha_rad_out[6]);
 
+
+
 // ---------- Servo setup ----------
 static const int SERVO_PINS[6] = {8, 9, 10, 11, 12, 13};
 // Left-mounted servos are inverted (per your hardware note)
@@ -131,6 +133,18 @@ void loop() {
   // 2) Handle serial commands
   parseSerialCommands();
 
+  // // 3) Compute IK for commanded pose (apply sign calibration)
+  // float alpha_rad2[6];
+  // ik_compute(ROLL_DIR*cmd_roll_deg, PITCH_DIR*cmd_pitch_deg, alpha_rad2);
+
+  // // 4) Map α → servo and write
+  // for (int i = 0; i < 6; i++) {
+  //   float alpha_deg2 = alpha_rad2[i] * 180.0f / PI;
+  //   int sdeg = mapAlphaToServoDeg(alpha_deg2);
+  //   if (SERVO_INVERTED[i]) sdeg = 180 - sdeg;
+  //   servos[i].write(sdeg);
+  // }
+
   // Reset controller reference if a new command is provided (prevents windup)
   static float last_cmd_roll = 0.0f;
   static float last_cmd_pitch = 0.0f;
@@ -141,35 +155,46 @@ void loop() {
     last_cmd_pitch = cmd_pitch_deg;
   }
 
-  // 3) PD attitude controller
-  float ref_roll_deg = 0.0f;
-  float ref_pitch_deg = 0.0f;
-  controller_update(cmd_roll_deg, cmd_pitch_deg,
-                    meas_roll_deg, meas_pitch_deg,
-                    dt,
-                    ref_roll_deg, ref_pitch_deg);
+  // --- servo write rate limit ---
+  static unsigned long lastServoWrite = 0;
+  const unsigned long SERVO_WRITE_PERIOD_US = 10000; // 10 ms = 100 Hz
+  if (now_us - lastServoWrite >= SERVO_WRITE_PERIOD_US) {
+    lastServoWrite = now_us;
 
-  // 4) Compute IK for commanded pose (apply sign calibration)
-  float alpha_rad[6];
-  ik_compute(ROLL_DIR*ref_roll_deg, PITCH_DIR*ref_pitch_deg, alpha_rad);
+    // 3) PD attitude controller
+    float ref_roll_deg = 0.0f;
+    float ref_pitch_deg = 0.0f;
 
-  // 5) Map α → servo and write
-  for (int i = 0; i < 6; i++) {
-    float alpha_deg = alpha_rad[i] * 180.0f / PI;
-    int sdeg = mapAlphaToServoDeg(alpha_deg);
-    if (SERVO_INVERTED[i]) sdeg = 180 - sdeg;
-    servos[i].write(sdeg);
-  }
+    controller_update(cmd_roll_deg, cmd_pitch_deg,
+                      meas_roll_deg, meas_pitch_deg,
+                      dt,
+                      ref_roll_deg, ref_pitch_deg);
 
-  // 6) Telemetry at ~10 Hz
-  static unsigned long lastPrint=0;
-  if (millis() - lastPrint > 100) {
-    lastPrint = millis();
+    // 4) Compute IK for commanded pose (apply sign calibration)
+    float alpha_rad[6];
+    ik_compute(ROLL_DIR*ref_roll_deg, PITCH_DIR*ref_pitch_deg, alpha_rad);
+
+    // Map α → servo and write
+    for (int i = 0; i < 6; i++) {
+      float alpha_deg = alpha_rad[i] * 180.0f / PI;
+      int sdeg = mapAlphaToServoDeg(alpha_deg);
+      if (SERVO_INVERTED[i]) sdeg = 180 - sdeg;
+      servos[i].write(sdeg);
+    }
+
     Serial.print(F("IMU r="));   Serial.print(meas_roll_deg, 2);
     Serial.print(F(" p="));      Serial.print(meas_pitch_deg, 2);
     Serial.print(F(" | CMD r="));Serial.print(cmd_roll_deg, 2);
     Serial.print(F(" p="));      Serial.print(cmd_pitch_deg, 2);
     Serial.print(F(" | REF r="));Serial.print(ref_roll_deg, 2);
     Serial.print(F(" p="));      Serial.println(ref_pitch_deg, 2);
+  }
+
+
+  // 6) Telemetry at ~10 Hz
+  static unsigned long lastPrint=0;
+  if (millis() - lastPrint > 100) {
+    lastPrint = millis();
+
   }
 }
