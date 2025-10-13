@@ -42,7 +42,7 @@ static void calibrateGyro() {
     float gz = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
 
     // Apply same axis remap as runtime
-    aux = gx; gx = -gy; gy = aux; gz = -gz;
+    aux = gx; gx = gy; gy = aux; gz = -gz;
 
     sx += gx; sy += gy; sz += gz;
     delay(5);
@@ -75,7 +75,7 @@ static void calibrateAccelOffsets() {
 
     // Apply same remap (IMU mounted upside-down)
     aux = ax;
-    ax = -ay;
+    ax = ay;
     ay =  aux;
     az = -az;
 
@@ -127,7 +127,7 @@ void imu_update() {
 
   // Axis remap
   aux = AccX;
-  AccX = -AccY;
+  AccX = AccY;
   AccY =  aux;
   AccZ = -AccZ;
 
@@ -145,7 +145,7 @@ void imu_update() {
 
   // Axis remap same as accel
   aux = GyroX;
-  GyroX = -GyroY;
+  GyroX = GyroY;
   GyroY =  aux;
   GyroZ = -GyroZ;
 
