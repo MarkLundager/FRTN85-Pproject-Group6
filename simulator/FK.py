@@ -17,7 +17,7 @@ def fk_iterative_6dof(H, p_top, d_len, R_init, T_init,
     R = R_init.copy() 
     T = T_init.copy()
     for _ in range(iters):
-        P = (R @ p_top.T).T + T          
+        P = (R @ p_top.T).T + T 
         v = P - H                        
         L = np.linalg.norm(v, axis=1)    
         r = L - d_len                    
