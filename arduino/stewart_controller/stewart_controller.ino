@@ -4,6 +4,9 @@
 
 #include <Arduino.h>
 #include <Servo.h>
+#include <math.h>
+
+#include "controller.h"
 
 // --------- Externs from imu.cpp ---------
 extern void  imu_begin();
@@ -35,6 +38,7 @@ Servo servos[6];
 // Commanded pose from Serial (deg)
 volatile float cmd_roll_deg  = 0.0f;
 volatile float cmd_pitch_deg = 0.0f;
+static unsigned long last_loop_us = 0;
 
 static void parseSerialCommands() {
   // Accept lines like: "r=3.5 p=-2"  or "3.5 -2"
@@ -105,10 +109,20 @@ void setup() {
   // 3) Initialize IMU (do this while platform is level and still)
   imu_begin();
 
+  controller_init(cmd_roll_deg, cmd_pitch_deg);
+  last_loop_us = micros();
+
   Serial.println(F("Stewart controller ready. Send 'r=<deg> p=<deg>' or '<r> <p>'"));
 }
 
 void loop() {
+  unsigned long now_us = micros();
+  float dt = (now_us - last_loop_us) * 1.0e-6f;
+  if (dt <= 0.0f) {
+    dt = 0.0005f; // fallback to 2 kHz in rare micros rollover race
+  }
+  last_loop_us = now_us;
+
   // 1) Update IMU fusion
   imu_update();
   float meas_roll_deg=0, meas_pitch_deg=0;
@@ -117,11 +131,29 @@ void loop() {
   // 2) Handle serial commands
   parseSerialCommands();
 
-  // 3) Compute IK for commanded pose (apply sign calibration)
-  float alpha_rad[6];
-  ik_compute(ROLL_DIR*cmd_roll_deg, PITCH_DIR*cmd_pitch_deg, alpha_rad);
+  // Reset controller reference if a new command is provided (prevents windup)
+  static float last_cmd_roll = 0.0f;
+  static float last_cmd_pitch = 0.0f;
+  if (fabsf(cmd_roll_deg - last_cmd_roll) > 1e-3f ||
+      fabsf(cmd_pitch_deg - last_cmd_pitch) > 1e-3f) {
+    controller_reset(cmd_roll_deg, cmd_pitch_deg);
+    last_cmd_roll  = cmd_roll_deg;
+    last_cmd_pitch = cmd_pitch_deg;
+  }
 
-  // 4) Map α → servo and write
+  // 3) PD attitude controller
+  float ref_roll_deg = 0.0f;
+  float ref_pitch_deg = 0.0f;
+  controller_update(cmd_roll_deg, cmd_pitch_deg,
+                    meas_roll_deg, meas_pitch_deg,
+                    dt,
+                    ref_roll_deg, ref_pitch_deg);
+
+  // 4) Compute IK for commanded pose (apply sign calibration)
+  float alpha_rad[6];
+  ik_compute(ROLL_DIR*ref_roll_deg, PITCH_DIR*ref_pitch_deg, alpha_rad);
+
+  // 5) Map α → servo and write
   for (int i = 0; i < 6; i++) {
     float alpha_deg = alpha_rad[i] * 180.0f / PI;
     int sdeg = mapAlphaToServoDeg(alpha_deg);
@@ -129,15 +161,15 @@ void loop() {
     servos[i].write(sdeg);
   }
 
-  // 5) Telemetry at ~10 Hz
+  // 6) Telemetry at ~10 Hz
   static unsigned long lastPrint=0;
   if (millis() - lastPrint > 100) {
     lastPrint = millis();
     Serial.print(F("IMU r="));   Serial.print(meas_roll_deg, 2);
     Serial.print(F(" p="));      Serial.print(meas_pitch_deg, 2);
     Serial.print(F(" | CMD r="));Serial.print(cmd_roll_deg, 2);
-    Serial.print(F(" p="));      Serial.println(cmd_pitch_deg, 2);
+    Serial.print(F(" p="));      Serial.print(cmd_pitch_deg, 2);
+    Serial.print(F(" | REF r="));Serial.print(ref_roll_deg, 2);
+    Serial.print(F(" p="));      Serial.println(ref_pitch_deg, 2);
   }
-
-  delay(10);
 }
