@@ -302,46 +302,6 @@ void build_geometry(float H[6][3], float p_top[6][3], float d_len[6]) {
   }
 }
 
-// ---------------- Example usage ----------------
-void setup() {
-  Serial.begin(115200);
-  delay(300);
-
-  // Build geometry from your parameters
-  float H[6][3];
-  float Ptop[6][3];
-  float dlen[6];
-  build_geometry(H, Ptop, dlen);
-
-  // Initial pose guess: identity rotation, translate to nominal height
-  mat3_identity(R_pose);
-  T_pose[0] = 0.0f;
-  T_pose[1] = 0.0f;
-  T_pose[2] = z0;
-
-  // Solve FK with your tolerances (use ROD_TOL for the residual stop)
-  bool ok = fk_iterative_6dof(H, Ptop, dlen, R_pose, T_pose,
-                              30, 1e-3f, ROD_TOL, 1e-8f);
-
-  Serial.println(ok ? F("Solve OK") : F("Solve FAILED"));
-
-  Serial.println(F("R:"));
-  for (int r=0;r<3;r++){
-    Serial.print(R_pose[r*3+0], 6); Serial.print(' ');
-    Serial.print(R_pose[r*3+1], 6); Serial.print(' ');
-    Serial.println(R_pose[r*3+2], 6);
-  }
-
-  Serial.print(F("T: "));
-  Serial.print(T_pose[0], 6); Serial.print(' ');
-  Serial.print(T_pose[1], 6); Serial.print(' ');
-  Serial.println(T_pose[2], 6);
-
-  float roll, pitch;
-  extract_roll_pitch_from_R(R_pose, roll, pitch);
-  Serial.print(F("roll: "));  Serial.println(roll, 6);
-  Serial.print(F("pitch: ")); Serial.println(pitch, 6);
-}
 
 
 
