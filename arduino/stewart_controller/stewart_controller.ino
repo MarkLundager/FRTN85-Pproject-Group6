@@ -161,7 +161,7 @@ void loop() {
   if (now_us - lastServoWrite >= SERVO_WRITE_PERIOD_US) {
     lastServoWrite = now_us;
 
-    // 3) PD attitude controller
+    // --- PD attitude controller (absolute, no accumulation) ---
     float ref_roll_deg = 0.0f;
     float ref_pitch_deg = 0.0f;
 
@@ -170,11 +170,10 @@ void loop() {
                       dt,
                       ref_roll_deg, ref_pitch_deg);
 
-    // 4) Compute IK for commanded pose (apply sign calibration)
+    // --- Compute IK for absolute reference ---
     float alpha_rad[6];
     ik_compute(ROLL_DIR*ref_roll_deg, PITCH_DIR*ref_pitch_deg, alpha_rad);
 
-    // Map α → servo and write
     for (int i = 0; i < 6; i++) {
       float alpha_deg = alpha_rad[i] * 180.0f / PI;
       int sdeg = mapAlphaToServoDeg(alpha_deg);
@@ -182,6 +181,7 @@ void loop() {
       servos[i].write(sdeg);
     }
 
+    // Telemetry
     Serial.print(F("IMU r="));   Serial.print(meas_roll_deg, 2);
     Serial.print(F(" p="));      Serial.print(meas_pitch_deg, 2);
     Serial.print(F(" | CMD r="));Serial.print(cmd_roll_deg, 2);
@@ -191,10 +191,4 @@ void loop() {
   }
 
 
-  // 6) Telemetry at ~10 Hz
-  static unsigned long lastPrint=0;
-  if (millis() - lastPrint > 100) {
-    lastPrint = millis();
-
-  }
 }
