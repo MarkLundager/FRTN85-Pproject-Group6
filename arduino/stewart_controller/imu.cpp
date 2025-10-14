@@ -27,7 +27,7 @@ static const float alpha = 0.96f;
 static unsigned long t_prev_us = 0;
 
 // --- Moving average filter for accelerometer ---
-static const int AVG_WINDOW = 100;
+static const int AVG_WINDOW = 50;
 static float rollBuf[AVG_WINDOW];
 static float pitchBuf[AVG_WINDOW];
 static int bufIdx = 0;
