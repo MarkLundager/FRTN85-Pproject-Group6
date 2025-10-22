@@ -1,174 +1,218 @@
-#include <stdio.h>
+// stewart_controller.ino
+// Controller + IK + FK + IMU, with proper headers only.
+
 #include <Arduino.h>
+#include "ik.h"
 #include <Servo.h>
+#include <math.h>
+#include "imu.h"
+#include "controller.h"
+#include "geometry.h"
+#include "fk.h"
 
-/* --------- Functions provided by your .cpp files (no headers) --------- */
-extern void  imu_begin();
-extern void  imu_update();
-extern void  imu_get_rp(float& roll_deg, float& pitch_deg);
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-extern void  ik_init_geometry(); // builds geometry (B, pTop, beta, constants)
-extern void  ik_compute(float roll_deg, float pitch_deg, float alpha_rad_out[6]);
 
-extern void  fk_pose_from_alpha(const float alpha_rad[6], float& roll_deg_out, float& pitch_deg_out);
 
-/* ------------------- Servo setup ------------------- */
-static const uint8_t SERVO_PINS[6]    = {8, 9, 10, 11, 12, 13};
-static const bool    SERVO_INVERTED[6]= {false, true, false, true, false, true};
+// ---------- Servo setup ----------
+static const int SERVO_PINS[6] = {8, 9, 10, 11, 12, 13};
+// Left-mounted servos are inverted (per your hardware note)
+static const bool SERVO_INVERTED[6] = {false, true, false, true, false, true};
 
-// Map α[deg] to servo [0..180] (tune for your linkage)
+// Optional overall sign calibration (keep as in your last working build)
+static const int ROLL_DIR  = -1;  // +roll tilts +Y side down
+static const int PITCH_DIR = -1;  // +pitch tilts +X side down
+
+Servo servos[6];
+
+// Commanded pose from Serial (deg)
+volatile float cmd_roll_deg  = 0.0f;
+volatile float cmd_pitch_deg = 0.0f;
+
+// --- Fusion weight: IMU primary, FK secondary ---
+static const float W_IMU = 0.75f;   // 0.6..0.9 typical
+
+// --- Keep last commanded servo angles (deg) for FK each cycle ---
+static float last_alpha_deg[6] = {0,0,0,0,0,0};
+static float roll_fk_deg_prev = 0.0f, pitch_fk_deg_prev = 0.0f;
+
+// --- Loop timing ---
+static unsigned long last_loop_us = 0;
+
+// Map α [deg] to servo command [0..180]; center ~90, ±30° span → [60..120]
 static inline int mapAlphaToServoDeg(float alpha_deg) {
   long m = map((long)alpha_deg, -30, 30, 60, 120);
   if (m < 0) m = 0; if (m > 180) m = 180;
   return (int)m;
 }
 
-// Sign calibration between world roll/pitch and your IK convention
-static const int ROLL_DIR  = -1;
-static const int PITCH_DIR = -1;
-
-static inline float clampf(float x, float lo, float hi){ return x<lo?lo:(x>hi?hi:x); }
-
-Servo servos[6];
-
-/* ------------------- Controller params ------------------- */
-static const float IMU_TRIGGER_DEG = 0.6f;         // fire when |ΔIMU| exceeds this
-static const uint32_t TRIGGER_MIN_MS = 40;         // rate limit
-static const float CMD_LIMIT_DEG    = 8.0f;        // cap each corrective command
-static const float K_CORR           = 1.0f;        // 0.6..1.0 typical (1=full cancel)
-
-/* ------------------- State ------------------- */
-static float last_alpha_rad[6] = {0};
-static float last_fk_roll_deg=0, last_fk_pitch_deg=0;
-static float last_imu_roll_deg=0, last_imu_pitch_deg=0;
-static uint32_t last_trig_ms=0;
-
-static bool manual_mode=false;
-static float cmd_roll_deg=0, cmd_pitch_deg=0;
-
-/* ------------------- Helpers ------------------- */
-static void writeServosFromAlpha(const float alpha_rad[6]) {
-  for (int i=0;i<6;i++) {
-    float a_deg = alpha_rad[i]*180.0f/PI;
-    int s = mapAlphaToServoDeg(a_deg);
-    if (SERVO_INVERTED[i]) s = 180 - s;
-    servos[i].write(s);
-  }
-}
-
 static void parseSerialCommands() {
   if (!Serial.available()) return;
-  String line = Serial.readStringUntil('\n'); line.trim();
-  if (!line.length()) return;
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line.length() == 0) return;
 
-  if (line == F("auto"))   { manual_mode=false; Serial.println(F("[MODE] auto"));   return; }
-  if (line == F("manual")) { manual_mode=true;  Serial.println(F("[MODE] manual")); return; }
+  float r=cmd_roll_deg, p=cmd_pitch_deg;
+  int matched = 0;
 
-  float r=cmd_roll_deg, p=cmd_pitch_deg; int matched=0;
-  if (line.indexOf('=')!=-1) {
-    int ir=line.indexOf('r'); if(ir==-1) ir=line.indexOf('R');
-    int ip=line.indexOf('p'); if(ip==-1) ip=line.indexOf('P');
-    if (ir!=-1){ int eq=line.indexOf('=',ir); if(eq!=-1){ r=line.substring(eq+1).toFloat(); matched++; } }
-    if (ip!=-1){ int eq=line.indexOf('=',ip); if(eq!=-1){ p=line.substring(eq+1).toFloat(); matched++; } }
+  if (line.indexOf('r') != -1 || line.indexOf('R') != -1) {
+    int ir = line.indexOf('r'); if (ir == -1) ir = line.indexOf('R');
+    int ip = line.indexOf('p'); if (ip == -1) ip = line.indexOf('P');
+    if (ir != -1) { int eq = line.indexOf('=', ir); if (eq != -1) { r = line.substring(eq+1).toFloat(); matched++; } }
+    if (ip != -1) { int eq = line.indexOf('=', ip); if (eq != -1) { p = line.substring(eq+1).toFloat(); matched++; } }
   } else {
-    char buf[64]; line.toCharArray(buf,sizeof(buf));
-    if (sscanf(buf, "%f %f", &r, &p)==2) matched=2;
+    char buf[64];
+    line.toCharArray(buf, sizeof(buf));
+    if (sscanf(buf, "%f %f", &r, &p) == 2) matched = 2;
   }
+
   if (matched) {
-    cmd_roll_deg=r; cmd_pitch_deg=p; manual_mode=true;
-    Serial.print(F("[CMD manual] r=")); Serial.print(cmd_roll_deg,2);
-    Serial.print(F(" p="));            Serial.println(cmd_pitch_deg,2);
+    cmd_roll_deg  = r;
+    cmd_pitch_deg = p;
+    Serial.print(F("[CMD] roll="));  Serial.print(cmd_roll_deg, 2);
+    Serial.print(F(" pitch="));      Serial.println(cmd_pitch_deg, 2);
   }
 }
 
-/* ------------------- Setup ------------------- */
+// Build horn tip positions from horn angles (degrees) for FK
+static inline void build_H_from_alpha_deg(const float alpha_deg[6], float H[6][3]) {
+  for (int i = 0; i < 6; i++) {
+    float th = alpha_deg[i] * (float)M_PI / 180.0f;
+    H[i][0] = B[i][0] + H_SERVO * cosf(beta[i]) * cosf(th);
+    H[i][1] = B[i][1] + H_SERVO * sinf(beta[i]) * cosf(th);
+    H[i][2] =             H_SERVO *            sinf(th);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("\n=== Stewart Platform Controller — Event-Triggered ==="));
+  Serial.println(F("\n=== Stewart Platform Controller Boot (Controller + IK + FK + IMU) ==="));
 
-  ik_init_geometry();
+  // Initialize geometry
+  ik_init_geometry();   // your IK precompute (radians API)
+  geometry_init();      // shared geometry for FK (B, p, beta, Z0, etc.)
 
-  for (int i=0;i<6;i++) servos[i].attach(SERVO_PINS[i]);
+  // Attach servos and move to neutral (flat platform)
+  for (int i = 0; i < 6; i++) servos[i].attach(SERVO_PINS[i]);
 
-  // Neutral
-  float alpha0[6]; ik_compute(0,0,alpha0);
-  writeServosFromAlpha(alpha0);
-  for(int i=0;i<6;i++) last_alpha_rad[i]=alpha0[i];
+  float alpha_rad_neutral[6];
+  ik_compute(0.0f, 0.0f, alpha_rad_neutral);
+  for (int i = 0; i < 6; i++) {
+    float deg = alpha_rad_neutral[i] * 180.0f / (float)M_PI;
+    last_alpha_deg[i] = deg; // seed FK
+    int mapped = mapAlphaToServoDeg(deg);
+    if (SERVO_INVERTED[i]) mapped = 180 - mapped;
+    servos[i].write(constrain(mapped, 0, 180));
+  }
 
-  // FK baseline from neutral
-  fk_pose_from_alpha(last_alpha_rad, last_fk_roll_deg, last_fk_pitch_deg);
+  Serial.println(F("Servos set to neutral (roll=0, pitch=0)"));
+  delay(1500); // wait to settle
 
-  // IMU
+  // Initialize IMU while level & still
   imu_begin();
-  last_imu_roll_deg=0; last_imu_pitch_deg=0;
 
-  Serial.println(F("Ready. Send 'auto'/'manual' or 'r=.. p=..' / '<r> <p>'"));
+  // Seed initial FK estimate (optional)
+  {
+    float H0[6][3]; build_H_from_alpha_deg(last_alpha_deg, H0);
+    float R0[3][3] = { {1,0,0},{0,1,0},{0,0,1} };
+    float T0[3] = {0.0f, 0.0f, Z0};
+    float R[3][3], T[3];
+    fk_iterative_6dof(H0, p, D_ROD, R0, T0, 30, 0.10f, 1e-5f, 1e-5f, R, T);
+    float r,pch; extract_roll_pitch_from_R(R, r, pch);
+    roll_fk_deg_prev  = r   * 180.0f/(float)M_PI;
+    pitch_fk_deg_prev = pch * 180.0f/(float)M_PI;
+  }
+
+  controller_init(cmd_roll_deg, cmd_pitch_deg);
+  last_loop_us = micros();
+
+  Serial.println(F("Ready. Send 'r=<deg> p=<deg>' or '<r> <p>'"));
 }
 
-/* ------------------- Loop ------------------- */
 void loop() {
-  // 1) IMU update
-  imu_update();
-  float imu_r=0, imu_p=0; imu_get_rp(imu_r, imu_p);
+  unsigned long now_us = micros();
+  float dt = (now_us - last_loop_us) * 1.0e-6f;
+  if (dt <= 0.0f) dt = 0.0005f; // fallback
+  last_loop_us = now_us;
 
-  // 2) Commands
+  // 1) Update IMU
+  imu_update();
+  float meas_roll_deg=0.0f, meas_pitch_deg=0.0f;
+  imu_get_rp(meas_roll_deg, meas_pitch_deg);
+
+  // 2) Handle serial commands (updates cmd_roll_deg / cmd_pitch_deg)
   parseSerialCommands();
 
-  // 3) AUTO: event-triggered corrections
-  if (!manual_mode) {
-    float d_r = imu_r - last_imu_roll_deg;
-    float d_p = imu_p - last_imu_pitch_deg;
-    bool trig = (fabs(d_r) >= IMU_TRIGGER_DEG) || (fabs(d_p) >= IMU_TRIGGER_DEG);
-    uint32_t now=millis();
+  // 3) Fuse IMU with last-cycle FK as measured tilt for the controller
+  float roll_meas_fused  = W_IMU * meas_roll_deg  + (1.0f - W_IMU) * roll_fk_deg_prev;
+  float pitch_meas_fused = W_IMU * meas_pitch_deg + (1.0f - W_IMU) * pitch_fk_deg_prev;
 
-    if (trig && (now - last_trig_ms >= TRIGGER_MIN_MS)) {
-      last_trig_ms = now;
+  // 4) Run your controller (outputs absolute roll/pitch reference in deg)
+  float ref_roll_deg = 0.0f, ref_pitch_deg = 0.0f;
 
-      // FK from current alphas → absolute baseline
-      fk_pose_from_alpha(last_alpha_rad, last_fk_roll_deg, last_fk_pitch_deg);
+  // Reset controller if a new command arrives (anti-windup style)
+  static float last_cmd_roll = 0.0f, last_cmd_pitch = 0.0f;
+  if (fabsf(cmd_roll_deg - last_cmd_roll) > 1e-3f ||
+      fabsf(cmd_pitch_deg - last_cmd_pitch) > 1e-3f) {
+    controller_reset(cmd_roll_deg, cmd_pitch_deg);
+    last_cmd_roll  = cmd_roll_deg;
+    last_cmd_pitch = cmd_pitch_deg;
+  }
 
-      // Total world tilt estimate = FK + ΔIMU
-      float tot_r = last_fk_roll_deg  + d_r;
-      float tot_p = last_fk_pitch_deg + d_p;
+  controller_update(cmd_roll_deg, cmd_pitch_deg,
+                    roll_meas_fused, pitch_meas_fused,
+                    dt,
+                    ref_roll_deg, ref_pitch_deg);
 
-      // Opposite correction (clamped)
-      float corr_r = clampf(-K_CORR*tot_r, -CMD_LIMIT_DEG, +CMD_LIMIT_DEG);
-      float corr_p = clampf(-K_CORR*tot_p, -CMD_LIMIT_DEG, +CMD_LIMIT_DEG);
+  // 5) IK → servo angles (radians out)
+  float alpha_rad_cmd[6];
+  ik_compute(ROLL_DIR*ref_roll_deg, PITCH_DIR*ref_pitch_deg, alpha_rad_cmd);
 
-      // IK for the corrective command (with sign calibration)
-      float alpha_new[6];
-      ik_compute(ROLL_DIR*corr_r, PITCH_DIR*corr_p, alpha_new);
-      writeServosFromAlpha(alpha_new);
-      for(int i=0;i<6;i++) last_alpha_rad[i]=alpha_new[i];
+  // --- servo write rate limit to ~100 Hz ---
+  static unsigned long lastServoWrite = 0;
+  const unsigned long SERVO_WRITE_PERIOD_US = 10000; // 10 ms
+  bool doWrite = (now_us - lastServoWrite) >= SERVO_WRITE_PERIOD_US;
+  if (doWrite) lastServoWrite = now_us;
 
-      // reset IMU delta baseline
-      last_imu_roll_deg  = imu_r;
-      last_imu_pitch_deg = imu_p;
-
-      Serial.print(F("TRIG ΔIMU=("));
-      Serial.print(d_r,2); Serial.print(',');
-      Serial.print(d_p,2); Serial.print(F(") FK=("));
-      Serial.print(last_fk_roll_deg,2); Serial.print(',');
-      Serial.print(last_fk_pitch_deg,2); Serial.print(F(") CMD=("));
-      Serial.print(corr_r,2); Serial.print(',');
-      Serial.print(corr_p,2); Serial.println(')');
+  if (doWrite) {
+    for (int i = 0; i < 6; i++) {
+      float alpha_deg = alpha_rad_cmd[i] * 180.0f / (float)M_PI;
+      last_alpha_deg[i] = alpha_deg; // store for FK
+      int sdeg = mapAlphaToServoDeg(alpha_deg);
+      if (SERVO_INVERTED[i]) sdeg = 180 - sdeg;
+      servos[i].write(sdeg);
     }
-  } else {
-    // MANUAL: keep applying current cmd
-    float alpha[6];
-    ik_compute(ROLL_DIR*cmd_roll_deg, PITCH_DIR*cmd_pitch_deg, alpha);
-    writeServosFromAlpha(alpha);
-    for(int i=0;i<6;i++) last_alpha_rad[i]=alpha[i];
   }
 
-  // 4) slow telemetry
-  static uint32_t t0=0;
-  if (millis()-t0>120){
-    t0=millis();
-    Serial.print(F("IMU r=")); Serial.print(imu_r,2);
-    Serial.print(F(" p="));     Serial.print(imu_p,2);
-    Serial.print(F(" | mode="));Serial.println(manual_mode?F("MAN"):F("AUTO"));
-  }
+  // 6) Recompute FK from last_alpha_deg for NEXT cycle’s fusion + Telemetry
+  {
+    float H[6][3]; build_H_from_alpha_deg(last_alpha_deg, H);
+    float R_init[3][3] = { {1,0,0},{0,1,0},{0,0,1} };
+    float T_init[3] = {0.0f, 0.0f, Z0};
+    float R_out[3][3], T_out[3];
 
-  delay(5);
+    fk_iterative_6dof(H, p, D_ROD, R_init, T_init, 30, 0.10f, 1e-5f, 1e-5f, R_out, T_out);
+
+    float roll_fk_rad, pitch_fk_rad;
+    extract_roll_pitch_from_R(R_out, roll_fk_rad, pitch_fk_rad);
+    roll_fk_deg_prev  = roll_fk_rad  * 180.0f / (float)M_PI;
+    pitch_fk_deg_prev = pitch_fk_rad * 180.0f / (float)M_PI;
+
+    // Telemetry at ~10 Hz
+    static unsigned long lastPrint=0;
+    if (millis() - lastPrint > 100) {
+      lastPrint = millis();
+      Serial.print(F("IMU r="));   Serial.print(meas_roll_deg, 2);
+      Serial.print(F(" p="));      Serial.print(meas_pitch_deg, 2);
+      Serial.print(F(" | FUSED r=")); Serial.print(roll_meas_fused, 2);
+      Serial.print(F(" p="));        Serial.print(pitch_meas_fused, 2);
+      Serial.print(F(" | REF r="));  Serial.print(ref_roll_deg, 2);
+      Serial.print(F(" p="));        Serial.print(ref_pitch_deg, 2);
+      Serial.print(F(" | FK r="));   Serial.print(roll_fk_deg_prev, 2);
+      Serial.print(F(" p="));        Serial.print(pitch_fk_deg_prev, 2);
+      Serial.print(F(" Z="));        Serial.println(T_out[2], 2);
+    }
+  }
 }

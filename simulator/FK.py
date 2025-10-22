@@ -27,16 +27,16 @@ def fk_iterative_6dof(H, p_top, d_len, R_init, T_init,
 
         J = np.zeros((6,6))
         for i in range(6):
-            ui = v[i] / (L[i] + 1e-12)
-            J[i, 0:3] = ui @ (-R @ skew(p_top[i]))
-            J[i, 3:6] = ui
+            ui = v[i] / (L[i] + 1e-12)  # compute direction vector (normalized) which shows where we're going translation wise.
+            J[i, 0:3] = ui @ (-R @ skew(p_top[i])) #Multiplying by R brings the point into the base frame and expresses movement based on pithc, roll and jaw. multiply by ui to see the movemnet in the leg length.
+            J[i, 3:6] = ui 
 
-        A = J.T @ J + (lam**2) * np.eye(6)
-        dx = -np.linalg.solve(A, J.T @ r)
+        A = J.T @ J + (lam**2) * np.eye(6)  # we wish to solve r + J * delta x = 0, i.e. J*delta x = -r However, we use least squares problem to handle ill condiiton or non square matrices. which then becomes A = (JT*J+Y^2I)dX = -JT*r
+        dx = -np.linalg.solve(A, J.T @ r)  # we solve it 
 
-        dR = so3_exp(dx[0:3])
-        R = R @ dR
-        T = T + dx[3:6]
+        dR = so3_exp(dx[0:3]) #we have rotation as [wx, wy, wz] -> transform into rotation matrix 3x3
+        R = R @ dR  #correct
+        T = T + dx[3:6] # correct
 
         if np.linalg.norm(dx) < tol_dx:
             break

@@ -36,7 +36,7 @@ static void calibrateGyro() {
     Wire.beginTransmission(MPU);
     Wire.write(0x43);
     Wire.endTransmission(false);
-    Wire.requestFrom(MPU, 6, true);
+    Wire.requestFrom((uint8_t)MPU, (uint8_t)6, (uint8_t)true);
     float gx = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
     float gy = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
     float gz = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
@@ -68,7 +68,7 @@ static void calibrateAccelOffsets() {
     Wire.beginTransmission(MPU);
     Wire.write(0x3B);
     Wire.endTransmission(false);
-    Wire.requestFrom(MPU, 6, true);
+    Wire.requestFrom((uint8_t)MPU, (uint8_t)6, (uint8_t)true);
     float ax = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
     float ay = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
     float az = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
@@ -120,7 +120,7 @@ void imu_update() {
   Wire.beginTransmission(MPU);
   Wire.write(0x3B);
   Wire.endTransmission(false);
-  Wire.requestFrom(MPU, 6, true);
+  Wire.requestFrom((uint8_t)MPU, (uint8_t)6, (uint8_t)true);
   AccX = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
   AccY = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
   AccZ = (int16_t)((Wire.read()<<8) | Wire.read()) / 16384.0f;
@@ -138,7 +138,7 @@ void imu_update() {
   Wire.beginTransmission(MPU);
   Wire.write(0x43);
   Wire.endTransmission(false);
-  Wire.requestFrom(MPU, 6, true);
+  Wire.requestFrom((uint8_t)MPU, (uint8_t)6, (uint8_t)true);
   GyroX = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
   GyroY = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;
   GyroZ = (int16_t)((Wire.read()<<8) | Wire.read()) / 131.0f;

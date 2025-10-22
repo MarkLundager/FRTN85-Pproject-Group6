@@ -1,25 +1,21 @@
-// inverse_kinematics.cpp
-// Stewart platform IK for roll/pitch only (yaw=0, x=y=0, z=z0).
-// Geometry and layout match your previous working C++.
-
 #include <Arduino.h>
 #include <math.h>
 
 // ---------- Geometry constants (cm) ----------
-extern const float h   = 1.64f;
-extern const float d   = 17.0f;
-extern const float z0  = 16.3f;
-const float r_top = 7.8f;
-const float r_bot = 9.3f;
+static const float h     = 1.64f;
+static const float d     = 17.0f;
+static const float r_top = 7.8f;
+static const float r_bot = 9.3f;
+static const float z0    = 16.3f;
 
 // ---------- Layout angles (rad) ----------
- const float pDelta = 15.25f * PI / 180.0f;
- const float bDelta = 23.58f * PI / 180.0f;
+static const float pDelta = 15.25f * PI / 180.0f;
+static const float bDelta = 23.58f * PI / 180.0f;
 
 // ---------- Precomputed geometry ----------
- float beta_[6], b_phi_[6], p_phi_[6];
- float Bx_[6], By_[6];
- float px_[6], py_[6];
+static float beta_[6], b_phi_[6], p_phi_[6];
+static float Bx_[6], By_[6];
+static float px_[6], py_[6];
 
 static void rotXY(float roll, float pitch,
                   const float px[], const float py[], const float pz[],
