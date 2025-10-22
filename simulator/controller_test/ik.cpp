@@ -1,18 +1,15 @@
 #include <Arduino.h>
 #include <math.h>
 
-// ---------- Geometry constants (cm) ----------
 static const float h     = 1.64f;
 static const float d     = 17.0f;
 static const float r_top = 7.8f;
 static const float r_bot = 9.3f;
 static const float z0    = 16.3f;
 
-// ---------- Layout angles (rad) ----------
 static const float pDelta = 15.25f * PI / 180.0f;
 static const float bDelta = 23.58f * PI / 180.0f;
 
-// ---------- Precomputed geometry ----------
 static float beta_[6], b_phi_[6], p_phi_[6];
 static float Bx_[6], By_[6];
 static float px_[6], py_[6];
@@ -24,7 +21,6 @@ static void rotXY(float roll, float pitch,
   float cp = cosf(pitch), sp = sinf(pitch);
   for (int i = 0; i < 6; i++) {
     float x = px[i], y = py[i], z = pz[i];
-    // R = Ry(pitch)*Rx(roll)
     float x1 =  cp*x + sp*z;
     float y1 =  sr*sp*x + cr*y - sr*cp*z;
     float z1 = -cr*sp*x + sr*y + cr*cp*z;
@@ -45,8 +41,7 @@ void ik_init_geometry() {
   }
 }
 
-// roll_deg, pitch_deg are in degrees (same convention as controller)
-// Output alpha in radians
+
 void ik_compute(float roll_deg, float pitch_deg, float alpha_rad_out[6]) {
   const float roll  = roll_deg  * PI / 180.0f;
   const float pitch = pitch_deg * PI / 180.0f;

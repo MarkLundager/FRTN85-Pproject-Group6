@@ -35,8 +35,8 @@ def fk_iterative_6dof(H, p_top, d_len, R_init, T_init,
         dx = -np.linalg.solve(A, J.T @ r)  # we solve it 
 
         dR = so3_exp(dx[0:3]) #we have rotation as [wx, wy, wz] -> transform into rotation matrix 3x3
-        R = R @ dR  #correct
-        T = T + dx[3:6] # correct
+        R = R @ dR  #adjust
+        T = T + dx[3:6] #adjust
 
         if np.linalg.norm(dx) < tol_dx:
             break

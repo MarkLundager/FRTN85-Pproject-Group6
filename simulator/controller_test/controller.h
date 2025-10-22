@@ -11,4 +11,4 @@ void controller_update(float desired_roll_deg,
                        float& ref_roll_deg_out,
                        float& ref_pitch_deg_out);
 
-#endif // STEWART_CONTROLLER_CONTROLLER_H
+#endif

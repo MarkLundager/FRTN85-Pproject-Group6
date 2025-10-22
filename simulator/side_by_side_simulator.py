@@ -1,4 +1,4 @@
-# sim_dual_fk_vs_integration.py
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
@@ -9,12 +9,12 @@ from utils import R_x, R_y, circle_points
 from IK import compute_alpha_rad
 from FK import fk_iterative_6dof, extract_roll_pitch_from_R
 
-# ---------------------------
-# Helpers
-# ---------------------------
+
+
+
 
 def horn_endpoints_base(B_base, beta, alpha, h_len):
-    """Horn tip H = B + [h*cos(a)*cos(b), h*cos(a)*sin(b), h*sin(a)]"""
+    
     ca, sa = np.cos(alpha), np.sin(alpha)
     cb, sb = np.cos(beta),  np.sin(beta)
     v = np.column_stack([h_len*(ca*cb), h_len*(ca*sb), h_len*sa])
@@ -55,7 +55,7 @@ def so3_exp(omega):
     K = skew(k)
     return np.eye(3) + np.sin(th)*K + (1-np.cos(th))*(K@K)
 
-# Numerical Jacobian of IK angles w.r.t. small RPY at (R_hat, T=[0,0,z0])
+
 def jacobian_alpha_wrt_rpy(R_hat, eps_rot=1e-3):
     """
     Returns J (6x3) where columns are d(alpha)/d(rx), d(alpha)/d(ry), d(alpha)/d(rz)
@@ -75,35 +75,35 @@ def jacobian_alpha_wrt_rpy(R_hat, eps_rot=1e-3):
         J[:, j] = (alpha_pert - alpha_nom) / eps_rot
     return J, alpha_nom
 
-# ---------------------------
-# Main
-# ---------------------------
+
+
+
 
 def run():
-    # --- Sim/servo params ---
-    DT = 0.02                       # s, UI tick
-    TAU_SERVO = 0.04                # s, internal servo following lag (sim)
-    # FK path rate cap (keep mild)
-    ALPHA_RATE_MAX_DEG_FK  = 360.0  # deg/s
-    # Integration path rate cap (bigger → worse linearization → more drift)
-    ALPHA_RATE_MAX_DEG_INT = 600.0  # deg/s
+    
+    DT = 0.02                       
+    TAU_SERVO = 0.04                
+    
+    ALPHA_RATE_MAX_DEG_FK  = 360.0  
+    
+    ALPHA_RATE_MAX_DEG_INT = 600.0  
 
-    # --- Integration-sim drift knobs (MEDIUM DRIFT) ---
-    ANGLE_NOISE_STD_DEG = 0.20      # white noise per joint (deg RMS per tick)
-    BIAS_RW_STD_DEG     = 0.01      # bias random-walk std (deg per tick)
-    JAC_EPS_ROT         = 2e-3      # rad; larger -> worse linearization
-    DAMP_JAC            = 5e-5      # less damping -> noisier inversion
-    GEOM_SCALE_H        = 1.02      # pretend horn length is 2% off in integrator
+    
+    ANGLE_NOISE_STD_DEG = 0.20      
+    BIAS_RW_STD_DEG     = 0.01      
+    JAC_EPS_ROT         = 2e-3      
+    DAMP_JAC            = 5e-5      
+    GEOM_SCALE_H        = 1.02      
 
     rng = np.random.default_rng()
 
-    # --- Figure with two 3D subplots ---
+    
     fig = plt.figure(figsize=(16, 8))
     ax_fk  = fig.add_subplot(121, projection='3d')
     ax_int = fig.add_subplot(122, projection='3d')
     plt.subplots_adjust(left=0.08, right=0.95, bottom=0.23, wspace=0.1)
 
-    # Show axis, grid, labels
+    
     for ax in (ax_fk, ax_int):
         ax.set_axis_on(); ax.grid(True)
         ax.set_xlim(-12, 12); ax.set_ylim(-12, 12); ax.set_zlim(0, 25)
@@ -113,21 +113,21 @@ def run():
     ax_fk.set_title('FK-based (closure each tick)')
     ax_int.set_title('Jacobian integration (no FK) — medium drift')
 
-    # World axes lines through scene (for both)
+    
     for ax in (ax_fk, ax_int):
         ax.plot([-12, 12], [0, 0], [0, 0], lw=1.2, ls='--', color='r', alpha=0.5)
         ax.plot([0, 0], [-12, 12], [0, 0], lw=1.2, ls='--', color='g', alpha=0.5)
         ax.plot([0, 0], [0, 0], [0, 25],     lw=1.2, ls='--', color='b', alpha=0.5)
 
-    # --- Initial top pose (relative to base) ---
+    
     R_tb0 = np.eye(3)
     T_tb0 = np.array([0.0, 0.0, z0])
 
-    # --- Get initial joint angles via IK ---
+    
     P0 = (R_tb0 @ p.T).T + T_tb0
     alpha0, _ = compute_alpha_rad(P0 - B, beta)
 
-    # ===== FK SIM STATE =====
+    
     R_tb_fk = R_tb0.copy()
     T_tb_fk = T_tb0.copy()
     alpha_cmd_fk  = alpha0.copy()
@@ -141,18 +141,18 @@ def run():
         "alpha_cmd": alpha_cmd_fk.copy()
     }
 
-    # ===== INTEGRATION SIM STATE =====
-    R_hat_int = R_tb0.copy()        # pose estimate (top wrt base)
+    
+    R_hat_int = R_tb0.copy()        
     T_hat_int = T_tb0.copy()
     alpha_cmd_int  = alpha0.copy()
     alpha_meas_int = alpha0.copy()
     alpha_prev_int = alpha_meas_int.copy()
-    bias_int = np.zeros(6)          # joint bias (rad), random-walk
+    bias_int = np.zeros(6)          
 
-    # --- Static base circle in base frame ---
+    
     base_circle_b = circle_points(r_bot)
 
-    # ----- DRAWING OBJECTS (FK) -----
+    
     top_poly_fk  = Poly3DCollection([np.zeros((50,3))], alpha=0.25, facecolor=(0,0,1,0.15), edgecolor='none')
     base_poly_fk = Poly3DCollection([np.zeros((50,3))], alpha=0.18, facecolor=(0,0,0,0.10), edgecolor='none')
     ax_fk.add_collection3d(top_poly_fk); ax_fk.add_collection3d(base_poly_fk)
@@ -165,7 +165,7 @@ def run():
     rods_fk  = [ax_fk.plot([], [], [], lw=2, color='k')[0] for _ in range(6)]
     imu_text_fk = fig.text(0.10, 0.96, "", color='black')
 
-    # ----- DRAWING OBJECTS (INT) -----
+    
     top_poly_int  = Poly3DCollection([np.zeros((50,3))], alpha=0.25, facecolor=(0,0,1,0.15), edgecolor='none')
     base_poly_int = Poly3DCollection([np.zeros((50,3))], alpha=0.18, facecolor=(0,0,0,0.10), edgecolor='none')
     ax_int.add_collection3d(top_poly_int); ax_int.add_collection3d(base_poly_int)
@@ -178,32 +178,32 @@ def run():
     rods_int  = [ax_int.plot([], [], [], lw=2, color='k')[0] for _ in range(6)]
     imu_text_int = fig.text(0.56, 0.96, "", color='black')
 
-    # --- Status line (shared) ---
+    
     status_text = fig.text(0.08, 0.02, "", color='red')
 
-    # --- Sliders: WORLD roll/pitch ---
+    
     ax_wroll  = plt.axes([0.18, 0.10, 0.60, 0.03])
     ax_wpitch = plt.axes([0.18, 0.06, 0.60, 0.03])
     s_wroll   = Slider(ax_wroll,  'World roll [°]',  -45, 45, valinit=0)
     s_wpitch  = Slider(ax_wpitch, 'World pitch [°]', -45, 45, valinit=0)
 
-    # ---------------------------
-    # Update loop (both sims)
-    # ---------------------------
+    
+    
+    
     def update(_):
         nonlocal R_tb_fk, T_tb_fk, R_seed_fk, T_seed_fk, alpha_cmd_fk, alpha_meas_fk, last_ok_fk
         nonlocal R_hat_int, T_hat_int, alpha_cmd_int, alpha_meas_int, alpha_prev_int, bias_int
 
-        # 1) World tilt (base->world)
+        
         wroll  = np.radians(s_wroll.val)
         wpitch = np.radians(s_wpitch.val)
-        R_bw = R_y(wpitch) @ R_x(wroll)   # base -> world
+        R_bw = R_y(wpitch) @ R_x(wroll)   
 
-        # 2) Desired top in BASE frame (keep level in world): R_tb_des = R_bw^T
+        
         R_tb_des = R_bw.T
         T_tb_des = np.array([0.0, 0.0, z0])
 
-        # 3) IK at desired pose → desired servo angles (shared)
+        
         P_des_b = (R_tb_des @ p.T).T + T_tb_des
         alpha_des, flags = compute_alpha_rad(P_des_b - B, beta)
         ik_ok = angles_feasible(alpha_des) and (not any(flags))
@@ -213,7 +213,7 @@ def run():
         else:
             status_text.set_text("")
 
-        # ====== FK SIM PATH ======
+        
         rate_cap_fk = np.radians(ALPHA_RATE_MAX_DEG_FK) * DT
         if ik_ok:
             delta_fk = alpha_des - alpha_cmd_fk
@@ -222,11 +222,11 @@ def run():
             alpha_cmd_fk = alpha_cmd_fk + delta_fk
         alpha_meas_fk = alpha_meas_fk + (alpha_cmd_fk - alpha_meas_fk) * (1 - np.exp(-DT/TAU_SERVO))
 
-        # FK with measured angles
+        
         H_b_fk = horn_endpoints_base(B, beta, alpha_meas_fk, h)
         R_try_b_fk, T_try_b_fk = fk_iterative_6dof(H_b_fk, p, d, R_seed_fk, T_seed_fk)
 
-        # Feasibility (rods)
+        
         P_try_b_fk = (R_try_b_fk @ p.T).T + T_try_b_fk
         L_fk = np.linalg.norm(P_try_b_fk - H_b_fk, axis=1)
         fk_ok = np.all(np.isfinite(L_fk)) and np.all(np.abs(L_fk - d) <= 1e-3)
@@ -247,7 +247,7 @@ def run():
             R_seed_fk, T_seed_fk = R_tb_fk.copy(), T_tb_fk.copy()
             status_text.set_text("FK infeasible — clamped (left)")
 
-        # ====== INTEGRATION SIM PATH (no FK) ======
+        
         rate_cap_int = np.radians(ALPHA_RATE_MAX_DEG_INT) * DT
         if ik_ok:
             delta_int = alpha_des - alpha_cmd_int
@@ -255,19 +255,19 @@ def run():
             delta_int = np.clip(delta_int, -rate_cap_int, +rate_cap_int)
             alpha_cmd_int = alpha_cmd_int + delta_int
 
-        # Servo internal following
+        
         alpha_meas_int = alpha_meas_int + (alpha_cmd_int - alpha_meas_int) * (1 - np.exp(-DT/TAU_SERVO))
 
-        # Inject bias random-walk and white noise (integration sim only)
+        
         bias_int += np.deg2rad(BIAS_RW_STD_DEG) * rng.standard_normal(6)
         alpha_meas_int += bias_int
         alpha_meas_int += np.deg2rad(ANGLE_NOISE_STD_DEG) * rng.standard_normal(6)
 
-        # Integrate pose from joint changes using IK Jacobian
+        
         delta_alpha = (alpha_meas_int - alpha_prev_int)
         alpha_prev_int = alpha_meas_int.copy()
 
-        # Geometry mismatch knob: scale effective joint change
+        
         delta_alpha *= GEOM_SCALE_H
 
         J, _ = jacobian_alpha_wrt_rpy(R_hat_int, eps_rot=JAC_EPS_ROT)
@@ -276,7 +276,7 @@ def run():
         R_hat_int = R_hat_int @ so3_exp(dtheta)
         T_hat_int = np.array([0.0, 0.0, z0])
 
-        # ---------------- DRAW (FK) ----------------
+        
         B_w_fk = transform_points_only_R(R_bw, B)
         H_w_fk = transform_points_only_R(R_bw, H_b_fk)
         P_w_fk = transform_points_only_R(R_bw, (R_tb_fk @ p.T).T + T_tb_fk)
@@ -305,7 +305,7 @@ def run():
         roll_fk, pitch_fk = extract_roll_pitch_from_R(R_tw_fk)
         imu_text_fk.set_text(f"FK IMU: roll={np.degrees(roll_fk):.1f}°, pitch={np.degrees(pitch_fk):.1f}°")
 
-        # ---------------- DRAW (INT) ----------------
+        
         H_b_int = horn_endpoints_base(B, beta, alpha_meas_int, h)
         B_w_int = transform_points_only_R(R_bw, B)
         H_w_int = transform_points_only_R(R_bw, H_b_int)
@@ -338,7 +338,7 @@ def run():
 
         fig.canvas.draw_idle()
 
-    # Hook sliders
+    
     s_wroll.on_changed(update)
     s_wpitch.on_changed(update)
 
