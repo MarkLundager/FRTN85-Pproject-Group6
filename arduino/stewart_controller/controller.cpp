@@ -3,19 +3,18 @@
 #include "controller.h"
 
 namespace {
-static const float KP_ROLL  = 3.0f;
-static const float KP_PITCH = 3.0f;
+static const float KP_ROLL  = 2.0f;
+static const float KP_PITCH = 2.0f;
 
-static const float KI_ROLL  = 0.4f;
-static const float KI_PITCH = 0.40f;
+static const float KI_ROLL  = 8.0f;
+static const float KI_PITCH = 8.0f;
 static const float ICLAMP   = 15.0f;
 
-static const float KD_ROLL  = 1.20f;
-static const float KD_PITCH = 1.20f;
+static const float KD_ROLL  = 0.0f;
+static const float KD_PITCH = 0.0f;
 static const float DERIV_LPF_ALPHA = 0.95f;
 
 static const float DEAD_BAND_DEG = 0.3f;
-static const float MAX_REF_RATE_DEG_S = 10.0f;   // if you keep slew limit
 static const float REF_LIMIT_DEG = 12.0f;
 
 
@@ -87,20 +86,6 @@ void controller_update(float desired_roll_deg,
   // absolute reference = command + correction
   float ref_roll  = desired_roll_deg  + corr_roll;
   float ref_pitch = desired_pitch_deg + corr_pitch;
-
-  // float ref_roll  = corr_roll;
-  // float ref_pitch = corr_pitch;
-
-  // slew-rate limit
-  // float max_step = MAX_REF_RATE_DEG_S * dt_seconds;
-  // float dr = ref_roll  - ref_roll_prev;
-  // float dp = ref_pitch - ref_pitch_prev;
-  // if (dr >  max_step) dr =  max_step;
-  // if (dr < -max_step) dr = -max_step;
-  // if (dp >  max_step) dp =  max_step;
-  // if (dp < -max_step) dp = -max_step;
-  // ref_roll  = ref_roll_prev  + dr;
-  // ref_pitch = ref_pitch_prev + dp;
 
   // clamp
   ref_roll  = constrain(ref_roll,  -REF_LIMIT_DEG, REF_LIMIT_DEG);
