@@ -4,11 +4,11 @@
 
 This project was done by:
 
-Thomás Esteves
-Juan José Quintero Sarmiento
-Mark Peter Lundager
-Gabriel Carreria Figueiredo
-Simon Ziegenbalg
+Thomás Esteves  
+Juan José Quintero Sarmiento  
+Mark Peter Lundager  
+Gabriel Carreria Figueiredo  
+Simon Ziegenbalg  
 
 
 ## Hardware Setup
